@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../application/providers/auth_provider.dart';
 import '../home/company_selection_screen.dart';
+import 'package:go_router/go_router.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -116,12 +117,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                           // SUCCESS LOGIN → NAVIGATE TO COMPANY SELECTION
                           if (mounted) {
-                            Navigator.pushReplacement(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const CompanySelectionScreen(),
-                              ),
-                            );
+                            context.go('/');
                           }
                         },
                   style: ElevatedButton.styleFrom(

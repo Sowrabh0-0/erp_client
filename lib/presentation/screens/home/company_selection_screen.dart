@@ -1,8 +1,9 @@
+// lib/presentation/screens/home/company_selection_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../application/providers/company_provider.dart';
-import '../../../core/config/supabase_client.dart';
+import '../../../application/providers/auth_provider.dart';
 
 class CompanySelectionScreen extends ConsumerStatefulWidget {
   const CompanySelectionScreen({super.key});
@@ -14,17 +15,28 @@ class CompanySelectionScreen extends ConsumerStatefulWidget {
 class _CompanySelectionScreenState extends ConsumerState<CompanySelectionScreen> {
   @override
   void initState() {
-    final s = SupabaseConfig.client;
-s.from('companies').select().then((data) {
-  debugPrint('COMPANIES TEST FROM SCREEN: $data');
-}).catchError((e) {
-  debugPrint('❌ ERROR FROM SCREEN: $e');
-});
-
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(companyProvider.notifier).loadCompanies();
     });
+  }
+
+  Future<bool> _setActiveCompany(String companyId) async {
+    // cache notifier before awaits
+    final authNotifier = ref.read(authProvider.notifier);
+    final supabase = authNotifier.client;
+    try {
+      // call RPC to set session variable for this connection
+      final res = await supabase.rpc('set_active_company', params: {
+        'company_id': companyId,
+      });
+      // res is usually null for void functions; log for debug
+      debugPrint('set_active_company RPC result: $res');
+      return true;
+    } catch (e, st) {
+      debugPrint('Failed to set active company: $e\n$st');
+      return false;
+    }
   }
 
   @override
@@ -33,29 +45,29 @@ s.from('companies').select().then((data) {
     final notifier = ref.read(companyProvider.notifier);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Select Company'),
-      ),
+      appBar: AppBar(title: const Text('Select Company')),
       body: state.loading
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
                 Expanded(
-                  child: ListView.builder(
-                    itemCount: state.companies.length,
-                    itemBuilder: (context, index) {
-                      final company = state.companies[index];
-                      return ListTile(
-                        title: Text(company['name'] ?? ''),
-                        onTap: () async {
-                          await notifier.selectCompany(
-                            company['id'] as String,
-                            company['name'] as String,
-                          );
-                        },
-                      );
-                    },
-                  ),
+                  child: state.companies.isEmpty
+                      ? const Center(child: Text('No companies found'))
+                      : ListView.builder(
+                          itemCount: state.companies.length,
+                          itemBuilder: (context, index) {
+                            final company = state.companies[index];
+                            return ListTile(
+                              title: Text(company['name'] ?? ''),
+                              onTap: () async {
+                                await notifier.selectCompany(
+                                  company['id'] as String,
+                                  company['name'] as String,
+                                );
+                              },
+                            );
+                          },
+                        ),
                 ),
 
                 if (state.selectedCompanyId != null)
@@ -99,18 +111,22 @@ s.from('companies').select().then((data) {
                         ElevatedButton(
                           onPressed: state.selectedTimePeriodId == null
                               ? null
-                              : () {
+                              : () async {
                                   final companyId = state.selectedCompanyId!;
-                                  final nameEncoded = Uri.encodeComponent(
-                                      state.selectedCompanyName ?? '');
                                   final timePeriodId = state.selectedTimePeriodId!;
+                                  // 1) set active company RPC
+                                  final ok = await _setActiveCompany(companyId);
+                                  if (!ok) {
+                                    if (!mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Failed to set active company')));
+                                    return;
+                                  }
 
-                                  // 🔥 GoRouter navigation
+                                  // 2) Navigate to home (we keep companyId/timePeriodId in URL for clarity)
+                                  final nameEncoded = Uri.encodeComponent(state.selectedCompanyName ?? '');
                                   context.go(
-                                    '/home'
-                                    '?companyId=$companyId'
-                                    '&companyName=$nameEncoded'
-                                    '&timePeriodId=$timePeriodId',
+                                    '/home?companyId=$companyId&companyName=$nameEncoded&timePeriodId=$timePeriodId',
                                   );
                                 },
                           child: const Text('Continue'),
